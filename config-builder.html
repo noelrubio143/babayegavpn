@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Babayega Config Builder</title>
+<style>
+  :root {
+    --bg: #0b0f0e;
+    --panel: #111917;
+    --panel-2: #151f1c;
+    --line: #24322d;
+    --text: #dce8e2;
+    --dim: #7c9089;
+    --accent: #35d68f;
+    --accent-dim: #1f7a54;
+    --warn: #e0a53c;
+    --danger: #e2555a;
+    --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+    --sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.5;
+  }
+  .grid-bg {
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(to right, #ffffff06 1px, transparent 1px),
+      linear-gradient(to bottom, #ffffff06 1px, transparent 1px);
+    background-size: 28px 28px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .wrap { position: relative; z-index: 1; max-width: 920px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  header { margin-bottom: 28px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 8px;
+  }
+  h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--dim); font-size: 14px; margin: 0; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .panel-title {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--dim); margin: 0 0 14px; display: flex; align-items: center; gap: 8px;
+  }
+  .panel-title .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .row.single { grid-template-columns: 1fr; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: 12px; color: var(--dim); font-family: var(--mono); }
+  input, select, textarea {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 9px 11px;
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    width: 100%;
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  input::placeholder, textarea::placeholder { color: #4d5f58; }
+
+  .proto-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+  .proto-tab {
+    font-family: var(--mono); font-size: 12px; padding: 7px 12px; border-radius: 20px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--dim); cursor: pointer;
+    transition: all .15s ease;
+  }
+  .proto-tab.active { border-color: var(--accent); color: var(--accent); background: #35d68f14; }
+  .proto-tab:hover { border-color: var(--accent-dim); }
+
+  .hint { font-size: 12px; color: var(--dim); margin-top: -4px; margin-bottom: 14px; }
+  .hint code { color: var(--warn); background: #00000030; padding: 1px 5px; border-radius: 4px; }
+
+  button {
+    font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
+    padding: 11px 18px; border-radius: 7px; border: none; cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  button:hover { opacity: 0.88; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #06231a; }
+  .btn-ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  .btn-danger { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+  .btn-row { display: flex; gap: 10px; margin-top: 6px; }
+
+  .status {
+    font-family: var(--mono); font-size: 12.5px; padding: 12px 14px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--panel-2); white-space: pre-wrap; word-break: break-word;
+    display: none;
+  }
+  .status.show { display: block; }
+  .status.ok { border-color: var(--accent-dim); color: var(--accent); }
+  .status.err { border-color: var(--danger); color: var(--danger); }
+  .status.info { color: var(--dim); }
+
+  .server-list { display: flex; flex-direction: column; gap: 8px; }
+  .server-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 10px 12px;
+  }
+  .server-item .meta { min-width: 0; }
+  .server-item .name { font-size: 13.5px; font-weight: 600; }
+  .server-item .proto { font-family: var(--mono); font-size: 11px; color: var(--accent); text-transform: uppercase; }
+  .server-item .actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .server-item .actions button { padding: 6px 10px; font-size: 11px; }
+  .empty { color: var(--dim); font-size: 13px; font-family: var(--mono); padding: 8px 2px; }
+
+  .lock-note { font-size: 11.5px; color: var(--dim); margin-top: 10px; line-height: 1.6; }
+  .lock-note b { color: var(--warn); }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">// babayega vpn — config builder</p>
+    <h1>Gumawa ng server config</h1>
+    <p class="sub">Parehong fields ng Custom Config screen mo. Pag ni-save, direktang na-a-update ang config.html mo sa GitHub — kukunin ng app ito sa susunod na Fetch.</p>
+  </header>
+
+  <div class="panel">
+    <p class="panel-title"><span class="dot"></span>1. GitHub repo</p>
+    <div class="row">
+      <div class="field">
+        <label>Username</label>
+        <input id="ghUser" placeholder="hal-fizz">
+      </div>
+      <div class="field">
+        <label>Repository</label>
+        <input id="ghRepo" placeholder="babayega-configs">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>File path</label>
+        <input id="ghPath" placeholder="config.html" value="config.html">
+      </div>
+      <div class="field">
+        <label>Branch</label>
+        <input id="ghBranch" placeholder="main" value="main">
+      </div>
+    </div>
+    <div class="row single">
+      <div class="field">
+        <label>Personal Access Token (fine-grained, Contents: Read & write)</label>
+        <input id="ghToken" type="password" placeholder="github_pat_...">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="loadServerList()">Connect &amp; load list</button>
+    </div>
+    <p class="lock-note">
+      Hindi na-save/na-transmit ang token mo kahit saan liban sa GitHub API — nasa memory lang ito habang bukas ang tab na ito. <b>Isara ang tab pagkatapos gamitin</b> kung shared/public computer. Gumamit ng fine-grained token na naka-scope lang sa isang repo.
+    </p>
+  </div>
+
+  <div class="panel">
+    <p class="panel-title"><span class="dot"></span>2. Kasalukuyang mga config</p>
+    <div id="serverList" class="server-list">
+      <p class="empty">Mag-connect muna sa itaas para makita ang listahan.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <p class="panel-title"><span class="dot"></span>3. Protocol</p>
+    <div class="proto-tabs" id="protoTabs"></div>
+
+    <div class="row">
+      <div class="field">
+        <label>Name (unique)</label>
+        <input id="fName" placeholder="PH Server 1">
+      </div>
+      <div class="field">
+        <label>Flag (country code)</label>
+        <input id="fFlag" placeholder="ph">
+      </div>
+    </div>
+    <div class="row single">
+      <div class="field">
+        <label>Info</label>
+        <input id="fInfo" placeholder="Free 10GB">
+      </div>
+    </div>
+
+    <div id="protoFields"></div>
+
+    <div class="row" id="optionalOverridesRow">
+      <div class="field">
+        <label>ProxyHost (optional)</label>
+        <input id="fProxyHost" placeholder="">
+      </div>
+      <div class="field">
+        <label>ProxyPort (optional)</label>
+        <input id="fProxyPort" placeholder="">
+      </div>
+    </div>
+    <div class="row" id="optionalOverridesRow2">
+      <div class="field">
+        <label>Payload (optional)</label>
+        <input id="fPayload" placeholder="">
+      </div>
+      <div class="field">
+        <label>SNI (optional)</label>
+        <input id="fSni" placeholder="">
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-primary" onclick="saveConfig()">Save → push sa GitHub</button>
+      <button class="btn-ghost" onclick="clearForm()">Clear form</button>
+    </div>
+  </div>
+
+  <div id="status" class="status"></div>
+
+</div>
+
+<script>
+const PROTO = {
+  ssh_direct:  { label: 'SSH Direct',   serverType: 1, fields: ['host','user'] },
+  ssh_proxy:   { label: 'SSH Proxy',    serverType: 2, fields: ['host','user'] },
+  ssh_ssl:     { label: 'SSH SSL',      serverType: 3, fields: ['host','user'] },
+  pay_ssl:     { label: 'Pay SSL',      serverType: 4, fields: ['host','user'] },
+  udp:         { label: 'UDP',          serverType: 6, fields: ['host','user'] },
+  slowdns:     { label: 'SlowDNS',      serverType: 5, fields: ['host','user','slowdns'] },
+  slipstream:  { label: 'Slipstream',   serverType: 8, fields: ['slipstream','user'] },
+  v2ray_link:  { label: 'Xray (link)',  fields: ['v2raylink'] },
+  v2ray_json:  { label: 'Xray (JSON)',  fields: ['v2rayjson'] },
+};
+
+let currentProto = 'ssh_direct';
+let editingName = null;   // non-null when editing an existing entry
+let cachedSha = null;     // sha of config.html, needed to push updates
+let cachedEntries = [];   // parsed entries currently in the file
+
+function el(id) { return document.getElementById(id); }
+
+function renderTabs() {
+  const wrap = el('protoTabs');
+  wrap.innerHTML = '';
+  Object.entries(PROTO).forEach(([key, p]) => {
+    const btn = document.createElement('div');
+    btn.className = 'proto-tab' + (key === currentProto ? ' active' : '');
+    btn.textContent = p.label;
+    btn.onclick = () => { currentProto = key; renderTabs(); renderFields(); };
+    wrap.appendChild(btn);
+  });
+}
+
+function fieldBlock(fieldsNeeded) {
+  const parts = [];
+  const has = (f) => fieldsNeeded.includes(f);
+
+  if (has('host')) {
+    parts.push(`
+      <div class="row">
+        <div class="field"><label>ServerHost</label><input id="fHost" placeholder="123.45.67.89"></div>
+        <div class="field"><label>ServerPort</label><input id="fPort" placeholder="22"></div>
+      </div>`);
+  }
+  if (has('user')) {
+    parts.push(`
+      <div class="row">
+        <div class="field"><label>Username</label><input id="fUser" placeholder="user1"></div>
+        <div class="field"><label>Password</label><input id="fPass" placeholder="pass1"></div>
+      </div>`);
+  }
+  if (has('slowdns')) {
+    parts.push(`
+      <div class="row">
+        <div class="field"><label>DNSServer</label><input id="fDns" placeholder="8.8.8.8"></div>
+        <div class="field"><label>Nameserver</label><input id="fNameserver" placeholder="ns.yourdomain.com"></div>
+      </div>
+      <div class="row single">
+        <div class="field"><label>PublicKey</label><input id="fPubKey" placeholder="dnstt public key"></div>
+      </div>`);
+  }
+  if (has('slipstream')) {
+    parts.push(`
+      <div class="row">
+        <div class="field"><label>Domain</label><input id="fDomain" placeholder="yourdomain.com"></div>
+        <div class="field"><label>Resolver</label><input id="fResolver" placeholder="8.8.8.8"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Authoritative</label><input id="fAuth" placeholder="ns.yourdomain.com"></div>
+        <div class="field"><label>Cert</label><input id="fCert" placeholder=""></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Congestion</label><input id="fCongestion" placeholder=""></div>
+        <div class="field"><label>KeepAlive</label><input id="fKeepAlive" placeholder=""></div>
+      </div>`);
+  }
+  if (has('v2raylink')) {
+    parts.push(`
+      <div class="row single">
+        <div class="field"><label>v2ray link (vmess:// vless:// trojan:// ss://)</label>
+        <textarea id="fV2rayLink" placeholder="vmess://..."></textarea></div>
+      </div>`);
+  }
+  if (has('v2rayjson')) {
+    parts.push(`
+      <div class="row single">
+        <div class="field"><label>Full V2Ray/Xray JSON config</label>
+        <textarea id="fV2rayJson" placeholder='{"outbounds": [...] }'></textarea></div>
+      </div>`);
+  }
+  return parts.join('');
+}
+
+function renderFields() {
+  el('protoFields').innerHTML = fieldBlock(PROTO[currentProto].fields);
+  const showOverrides = !currentProto.startsWith('v2ray');
+  el('optionalOverridesRow').style.display = showOverrides ? 'grid' : 'none';
+  el('optionalOverridesRow2').style.display = showOverrides ? 'grid' : 'none';
+}
+
+function clearForm() {
+  editingName = null;
+  el('fName').value = ''; el('fInfo').value = ''; el('fFlag').value = '';
+  el('fProxyHost').value = ''; el('fProxyPort').value = ''; el('fPayload').value = ''; el('fSni').value = '';
+  renderFields();
+}
+
+function showStatus(msg, kind) {
+  const s = el('status');
+  s.textContent = msg;
+  s.className = 'status show ' + (kind || 'info');
+}
+
+function ghHeaders(token) {
+  return {
+    'Authorization': 'Bearer ' + token,
+    'Accept': 'application/vnd.github+json',
+  };
+}
+
+function b64EncodeUtf8(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function b64DecodeUtf8(str) {
+  return decodeURIComponent(escape(atob(str)));
+}
+
+function ghConfig() {
+  return {
+    user: el('ghUser').value.trim(),
+    repo: el('ghRepo').value.trim(),
+    path: el('ghPath').value.trim() || 'config.html',
+    branch: el('ghBranch').value.trim() || 'main',
+    token: el('ghToken').value.trim(),
+  };
+}
+
+function extractEntries(html) {
+  const match = html.match(/<script[^>]*id=["']babayega-configs["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (!match) return [];
+  try { return JSON.parse(match[1].trim()); } catch (e) { return []; }
+}
+
+function protoKeyForEntry(entry) {
+  if (entry.ConfigJson) return 'v2ray_json';
+  if (entry.v2ray) return 'v2ray_link';
+  if (entry.Domain !== undefined) return 'slipstream';
+  const t = entry.serverType;
+  if (t === 5) return 'slowdns';
+  if (t === 2) return 'ssh_proxy';
+  if (t === 3) return 'ssh_ssl';
+  if (t === 4) return 'pay_ssl';
+  if (t === 6) return 'udp';
+  return 'ssh_direct';
+}
+
+function renderServerList() {
+  const wrap = el('serverList');
+  if (!cachedEntries.length) {
+    wrap.innerHTML = '<p class="empty">Wala pang config sa file. Gumawa ka sa ibaba.</p>';
+    return;
+  }
+  wrap.innerHTML = '';
+  cachedEntries.forEach((entry) => {
+    const key = protoKeyForEntry(entry);
+    const item = document.createElement('div');
+    item.className = 'server-item';
+    item.innerHTML = `
+      <div class="meta">
+        <div class="name">${entry.Name || '(no name)'}</div>
+        <div class="proto">${PROTO[key] ? PROTO[key].label : key}</div>
+      </div>
+      <div class="actions">
+        <button class="btn-ghost" onclick="editEntry('${encodeURIComponent(entry.Name)}')">Edit</button>
+        <button class="btn-danger" onclick="deleteEntry('${encodeURIComponent(entry.Name)}')">Delete</button>
+      </div>`;
+    wrap.appendChild(item);
+  });
+}
+
+function editEntry(encodedName) {
+  const name = decodeURIComponent(encodedName);
+  const entry = cachedEntries.find(e => e.Name === name);
+  if (!entry) return;
+  editingName = name;
+  currentProto = protoKeyForEntry(entry);
+  renderTabs(); renderFields();
+
+  el('fName').value = entry.Name || '';
+  el('fInfo').value = entry.Info || '';
+  el('fFlag').value = entry.Flag || '';
+  el('fProxyHost').value = entry.ProxyHost || '';
+  el('fProxyPort').value = entry.ProxyPort || '';
+  el('fPayload').value = entry.Payload || '';
+  el('fSni').value = entry.SNI || '';
+
+  if (el('fHost')) el('fHost').value = entry.ServerHost || '';
+  if (el('fPort')) el('fPort').value = entry.ServerPort || '';
+  if (el('fUser')) el('fUser').value = entry.Username || '';
+  if (el('fPass')) el('fPass').value = entry.Password || '';
+  if (el('fDns')) el('fDns').value = entry.DNSServer || '';
+  if (el('fNameserver')) el('fNameserver').value = entry.Nameserver || '';
+  if (el('fPubKey')) el('fPubKey').value = entry.PublicKey || '';
+  if (el('fDomain')) el('fDomain').value = entry.Domain || '';
+  if (el('fResolver')) el('fResolver').value = entry.Resolver || '';
+  if (el('fAuth')) el('fAuth').value = entry.Authoritative || '';
+  if (el('fCert')) el('fCert').value = entry.Cert || '';
+  if (el('fCongestion')) el('fCongestion').value = entry.Congestion || '';
+  if (el('fKeepAlive')) el('fKeepAlive').value = entry.KeepAlive || '';
+  if (el('fV2rayLink')) el('fV2rayLink').value = entry.v2ray || '';
+  if (el('fV2rayJson')) el('fV2rayJson').value = entry.ConfigJson || '';
+
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}
+
+async function deleteEntry(encodedName) {
+  const name = decodeURIComponent(encodedName);
+  if (!confirm('Delete "' + name + '"? Hindi na mababawi ito.')) return;
+  cachedEntries = cachedEntries.filter(e => e.Name !== name);
+  await pushToGithub('Delete config: ' + name);
+  renderServerList();
+}
+
+function buildEntryFromForm() {
+  const name = el('fName').value.trim();
+  if (!name) { throw new Error('Kailangan ng Name.'); }
+
+  const entry = {
+    Name: name,
+    Info: el('fInfo').value.trim(),
+    Flag: el('fFlag').value.trim() || 'ph',
+    Custom: true,
+  };
+
+  const put = (k, v) => { if (v !== undefined && v !== '') entry[k] = v; };
+
+  if (currentProto === 'v2ray_link') {
+    const link = el('fV2rayLink').value.trim();
+    if (!link) throw new Error('Kailangan ng v2ray link.');
+    entry.v2ray = link;
+    return entry;
+  }
+  if (currentProto === 'v2ray_json') {
+    const json = el('fV2rayJson').value.trim();
+    if (!json) throw new Error('Kailangan ng ConfigJson.');
+    entry.ConfigJson = json;
+    return entry;
+  }
+
+  const p = PROTO[currentProto];
+  if (p.serverType !== undefined) entry.serverType = p.serverType;
+
+  if (currentProto === 'slipstream') {
+    const domain = el('fDomain').value.trim();
+    if (!domain) throw new Error('Kailangan ng Domain.');
+    entry.Domain = domain;
+    put('Resolver', el('fResolver').value.trim());
+    put('Authoritative', el('fAuth').value.trim());
+    put('Cert', el('fCert').value.trim());
+    put('Congestion', el('fCongestion').value.trim());
+    put('KeepAlive', el('fKeepAlive').value.trim());
+    put('Username', el('fUser').value.trim());
+    put('Password', el('fPass').value.trim());
+  } else {
+    const host = el('fHost').value.trim();
+    if (!host) throw new Error('Kailangan ng ServerHost.');
+    entry.ServerHost = host;
+    put('ServerPort', el('fPort').value.trim());
+    put('Username', el('fUser').value.trim());
+    put('Password', el('fPass').value.trim());
+    if (currentProto === 'slowdns') {
+      put('DNSServer', el('fDns').value.trim());
+      put('PublicKey', el('fPubKey').value.trim());
+      put('Nameserver', el('fNameserver').value.trim());
+    }
+  }
+
+  put('ProxyHost', el('fProxyHost').value.trim());
+  put('ProxyPort', el('fProxyPort').value.trim());
+  put('Payload', el('fPayload').value.trim());
+  put('SNI', el('fSni').value.trim());
+
+  return entry;
+}
+
+function rebuildHtml(entries) {
+  const json = JSON.stringify(entries, null, 2);
+  return `<!DOCTYPE html>
+<html>
+<head><title>Babayega VPN Configs</title></head>
+<body>
+  <h1>Server Configs</h1>
+  <p>Auto-generated by Config Builder. Wag alisin yung script tag sa baba.</p>
+
+  <script type="application/json" id="babayega-configs">
+${json}
+  <\/script>
+</body>
+</html>
+`;
+}
+
+async function loadServerList() {
+  const cfg = ghConfig();
+  if (!cfg.user || !cfg.repo || !cfg.token) {
+    showStatus('Punan muna ang Username, Repository, at Token.', 'err');
+    return;
+  }
+  showStatus('Kumukuha ng config.html mula sa GitHub...', 'info');
+  try {
+    const url = `https://api.github.com/repos/${cfg.user}/${cfg.repo}/contents/${encodeURIComponent(cfg.path)}?ref=${encodeURIComponent(cfg.branch)}`;
+    const res = await fetch(url, { headers: ghHeaders(cfg.token) });
+    if (res.status === 404) {
+      cachedSha = null;
+      cachedEntries = [];
+      renderServerList();
+      showStatus('Wala pang file na "' + cfg.path + '" sa repo mo. Gagawa ng bago pag Save ka.', 'info');
+      return;
+    }
+    if (!res.ok) throw new Error('GitHub error ' + res.status + ': ' + (await res.text()));
+    const data = await res.json();
+    cachedSha = data.sha;
+    const html = b64DecodeUtf8(data.content.replace(/\n/g, ''));
+    cachedEntries = extractEntries(html);
+    renderServerList();
+    showStatus('Naka-connect. ' + cachedEntries.length + ' config(s) na kasalukuyang naka-save.', 'ok');
+  } catch (e) {
+    showStatus('Fetch failed: ' + e.message, 'err');
+  }
+}
+
+async function pushToGithub(commitMessage) {
+  const cfg = ghConfig();
+  const newHtml = rebuildHtml(cachedEntries);
+  const body = {
+    message: commitMessage,
+    content: b64EncodeUtf8(newHtml),
+    branch: cfg.branch,
+  };
+  if (cachedSha) body.sha = cachedSha;
+
+  const url = `https://api.github.com/repos/${cfg.user}/${cfg.repo}/contents/${encodeURIComponent(cfg.path)}`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error('GitHub error ' + res.status + ': ' + (await res.text()));
+  const data = await res.json();
+  cachedSha = data.content.sha;
+  return data;
+}
+
+async function saveConfig() {
+  const cfg = ghConfig();
+  if (!cfg.user || !cfg.repo || !cfg.token) {
+    showStatus('Punan muna ang Username, Repository, at Token, tapos i-Connect.', 'err');
+    return;
+  }
+  let entry;
+  try {
+    entry = buildEntryFromForm();
+  } catch (e) {
+    showStatus(e.message, 'err');
+    return;
+  }
+
+  showStatus('Nagpu-push sa GitHub...', 'info');
+  try {
+    if (editingName && editingName !== entry.Name) {
+      cachedEntries = cachedEntries.filter(e => e.Name !== editingName);
+    }
+    const idx = cachedEntries.findIndex(e => e.Name === entry.Name);
+    if (idx >= 0) cachedEntries[idx] = entry; else cachedEntries.push(entry);
+
+    await pushToGithub((editingName ? 'Update' : 'Add') + ' config: ' + entry.Name);
+    renderServerList();
+    clearForm();
+    showStatus('Na-save! Kunin na lang ng "Fetch Configs" sa app mo. (' + cachedEntries.length + ' total)', 'ok');
+  } catch (e) {
+    showStatus('Save failed: ' + e.message, 'err');
+  }
+}
+
+renderTabs();
+renderFields();
+</script>
+</body>
+</html>
