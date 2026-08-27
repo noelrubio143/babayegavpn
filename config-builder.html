@@ -166,11 +166,39 @@
         <input id="ghToken" type="password" placeholder="github_pat_...">
       </div>
     </div>
+    <div class="row single">
+      <div class="field">
+        <label id="vaultLabel">Passphrase (para i-save ang token, naka-encrypt, dito sa browser na ito)</label>
+        <input id="vaultPass" type="password" placeholder="sariling passphrase mo"
+               onkeydown="if(event.key==='Enter'){ event.preventDefault(); vaultEnterPressed(); }">
+      </div>
+    </div>
     <div class="btn-row">
       <button class="btn-primary" onclick="loadServerList()">Connect &amp; load list</button>
+      <button class="btn-ghost" id="btnSaveToken" onclick="saveTokenLocally()">💾 I-save ang token</button>
+      <button class="btn-ghost" id="btnUnlock" onclick="unlockToken()" style="display:none">🔓 I-unlock ang token</button>
+      <button class="btn-danger" id="btnForgetToken" onclick="forgetSavedToken()" style="display:none">🗑 Kalimutan</button>
     </div>
     <p class="lock-note">
-      Hindi na-save/na-transmit ang token mo kahit saan liban sa GitHub API — nasa memory lang ito habang bukas ang tab na ito. <b>Isara ang tab pagkatapos gamitin</b> kung shared/public computer. Gumamit ng fine-grained token na naka-scope lang sa isang repo. <b>Hindi ito i-se-save sa file na ito</b> — ikaw mismo maglalagay tuwing gagamitin.
+      Hindi na-save/na-transmit ang token mo kahit saan liban sa GitHub API. Kung gusto mong hindi na mag-paste ulit: ilagay ang Token at isang passphrase, tapos pindutin ang <b>"I-save ang token"</b> — mae-encrypt ito (AES-GCM, derived mula sa passphrase mo) at mase-save lang sa browser na ito (localStorage), hindi sa GitHub o sa config.html. Sa susunod na bisita mo dito, ilagay lang ang passphrase at pindutin ang <b>Enter</b> o <b>"I-unlock ang token"</b> para awtomatikong mapunan ang Token field. Gumamit ng malakas na passphrase, at <b>huwag i-save ang token sa shared/public na computer</b> — may "Kalimutan" button para tanggalin ang naka-save anumang oras. Kung ayaw mo ng feature na ito, gumagana pa rin nang normal ang builder gaya ng dati — ikaw lang mismo ang maglalagay ng token tuwing gagamit.
+    </p>
+
+    <p class="panel-title" style="margin-top:22px;"><span class="dot"></span>Export / Import (para sa ibang browser o device)</p>
+    <div class="btn-row">
+      <button class="btn-ghost" onclick="exportToken()">📤 I-export ang token</button>
+    </div>
+    <textarea id="exportBlob" readonly placeholder="Lalabas dito ang naka-encrypt na blob pagkatapos i-export" style="display:none; margin-top:8px;" onclick="this.select()"></textarea>
+    <div class="row single" style="margin-top:14px;">
+      <div class="field">
+        <label>I-paste dito ang blob na na-export mula sa ibang browser</label>
+        <textarea id="importBlob" placeholder="i-paste dito ang naka-encrypt na blob"></textarea>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-ghost" onclick="importToken()">📥 I-import ang token</button>
+    </div>
+    <p class="lock-note">
+      Ito ang ligtas na paraan para dalhin ang token mo sa ibang browser o device — <b>hindi</b> ito naka-save sa config.html o sa GitHub, kaya hindi ito nakikita ng app o ng kahit sino may access sa repo mo. Gamitin ang parehong passphrase (sa Passphrase field sa itaas) pareho sa Export at Import. Ang blob mismo ay walang silbi nang wala ang tamang passphrase — pero ikaw pa rin ang bahalang mag-ingat kung saan mo ito ipapadala (hal. sarili mong Notes/private message lang, hindi sa public na lugar).
     </p>
   </div>
 
@@ -323,6 +351,170 @@ async function configDecrypt(obfuscated) {
   for (let i = 0; i < binary.length; i++) ctBytes[i] = binary.charCodeAt(i);
   const ptBuffer = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, ctBytes);
   return new TextDecoder().decode(ptBuffer);
+}
+
+// ---------------------------------------------------------------------
+// Local token vault: lets you save the GitHub token in this browser's
+// localStorage, encrypted with a passphrase only you know (never sent
+// anywhere, never written into config.html). PBKDF2 derives an AES-GCM
+// key from the passphrase with a random salt each time you save, and
+// AES-GCM's built-in auth tag means a wrong passphrase fails decryption
+// cleanly instead of silently returning garbage.
+// ---------------------------------------------------------------------
+const VAULT_KEY = 'babayega_cb_token_vault';
+const VAULT_PBKDF2_ITERATIONS = 150000;
+
+function bufToB64(bytes) {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+function b64ToBuf(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function vaultDeriveKey(passphrase, saltBytes) {
+  const baseKey = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(passphrase), { name: 'PBKDF2' }, false, ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: saltBytes, iterations: VAULT_PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function vaultEncryptToken(token, passphrase) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await vaultDeriveKey(passphrase, salt);
+  const ctBuffer = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(token));
+  return { salt: bufToB64(salt), iv: bufToB64(iv), ct: bufToB64(new Uint8Array(ctBuffer)) };
+}
+
+async function vaultDecryptToken(vault, passphrase) {
+  const key = await vaultDeriveKey(passphrase, b64ToBuf(vault.salt));
+  const ptBuffer = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: b64ToBuf(vault.iv) }, key, b64ToBuf(vault.ct)
+  );
+  return new TextDecoder().decode(ptBuffer);
+}
+
+function getSavedVault() {
+  try {
+    const raw = localStorage.getItem(VAULT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function refreshVaultUI() {
+  const hasVault = !!getSavedVault();
+  el('btnUnlock').style.display = hasVault ? 'inline-block' : 'none';
+  el('btnForgetToken').style.display = hasVault ? 'inline-block' : 'none';
+  el('btnSaveToken').textContent = hasVault ? '💾 I-update ang naka-save na token' : '💾 I-save ang token';
+  el('vaultLabel').textContent = hasVault
+    ? 'Passphrase (para i-unlock ang naka-save na token)'
+    : 'Passphrase (para i-save ang token, naka-encrypt, dito sa browser na ito)';
+}
+
+async function saveTokenLocally() {
+  const token = el('ghToken').value.trim();
+  const pass = el('vaultPass').value;
+  if (!token) { showStatus('Ilagay muna ang Token sa itaas bago i-save.', 'err'); return; }
+  if (!pass) { showStatus('Kailangan ng passphrase para i-encrypt ang naka-save na token.', 'err'); return; }
+  try {
+    const vault = await vaultEncryptToken(token, pass);
+    localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
+    refreshVaultUI();
+    showStatus('Na-save na ang token (naka-encrypt) dito sa browser na ito. Sa susunod, ilagay lang ang passphrase mo at pindutin ang Enter o "I-unlock ang token".', 'ok');
+  } catch (e) {
+    showStatus('Hindi na-save ang token: ' + e.message, 'err');
+  }
+}
+
+async function unlockToken() {
+  const vault = getSavedVault();
+  if (!vault) { showStatus('Wala pang naka-save na token dito sa browser na ito.', 'info'); return; }
+  const pass = el('vaultPass').value;
+  if (!pass) { showStatus('Ilagay ang passphrase para i-unlock ang naka-save na token.', 'err'); return; }
+  try {
+    el('ghToken').value = await vaultDecryptToken(vault, pass);
+    showStatus('Na-unlock ang token — pwede ka nang mag-Connect.', 'ok');
+  } catch (e) {
+    showStatus('Mali ang passphrase (o sira ang naka-save). Subukan ulit.', 'err');
+  }
+}
+
+function forgetSavedToken() {
+  if (!confirm('Alisin ang naka-save na (encrypted) token dito sa browser na ito? Hindi na ito mababawi.')) return;
+  localStorage.removeItem(VAULT_KEY);
+  el('vaultPass').value = '';
+  refreshVaultUI();
+  showStatus('Naalis na ang naka-save na token dito sa browser na ito.', 'info');
+}
+
+function vaultEnterPressed() {
+  if (getSavedVault()) {
+    unlockToken();
+  } else {
+    showStatus('Wala pang naka-save na token. Ilagay muna ang Token sa itaas, tapos i-click ang "I-save ang token".', 'info');
+  }
+}
+
+// ---------------------------------------------------------------------
+// Export/Import: move the token to another browser/device without ever
+// writing it to config.html or GitHub. The blob is the same
+// {salt, iv, ct} shape as the local vault, base64-wrapped for easy
+// copy/paste, and still requires the passphrase to be useful.
+// ---------------------------------------------------------------------
+function encodeVaultBlob(vault) {
+  return btoa(JSON.stringify(vault));
+}
+function decodeVaultBlob(blobStr) {
+  return JSON.parse(atob(blobStr.trim()));
+}
+
+async function exportToken() {
+  const token = el('ghToken').value.trim();
+  const pass = el('vaultPass').value;
+  if (!token) { showStatus('Ilagay muna ang Token sa itaas bago mag-export.', 'err'); return; }
+  if (!pass) { showStatus('Kailangan ng passphrase para i-encrypt ang ie-export.', 'err'); return; }
+  try {
+    const vault = await vaultEncryptToken(token, pass);
+    const blob = encodeVaultBlob(vault);
+    const box = el('exportBlob');
+    box.value = blob;
+    box.style.display = 'block';
+    box.select();
+    showStatus('Na-generate ang naka-encrypt na blob. Kopyahin ito (naka-select na) at gamitin sa ibang browser/device, kasama ang parehong passphrase.', 'ok');
+  } catch (e) {
+    showStatus('Hindi na-export: ' + e.message, 'err');
+  }
+}
+
+async function importToken() {
+  const blobStr = el('importBlob').value.trim();
+  const pass = el('vaultPass').value;
+  if (!blobStr) { showStatus('I-paste muna ang na-export na blob sa field sa itaas.', 'err'); return; }
+  if (!pass) { showStatus('Ilagay ang passphrase na ginamit noong ni-export ang blob.', 'err'); return; }
+  try {
+    const vault = decodeVaultBlob(blobStr);
+    const token = await vaultDecryptToken(vault, pass);
+    el('ghToken').value = token;
+    // Auto-save into this browser's own vault too, so the next visit here
+    // just needs the passphrase -- no need to click "I-save ang token"
+    // separately after every import.
+    localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
+    refreshVaultUI();
+    showStatus('Na-import ang token mula sa blob at na-save na rin dito sa browser na ito — pwede ka nang mag-Connect. Sa susunod, passphrase na lang ang kailangan mo dito.', 'ok');
+  } catch (e) {
+    showStatus('Hindi ma-import: mali ang passphrase, o sira/hindi kumpleto ang blob.', 'err');
+  }
 }
 
 function renderTabs() {
@@ -703,6 +895,8 @@ async function saveConfig() {
 
 renderTabs();
 renderFields();
+refreshVaultUI();
+if (getSavedVault()) el('vaultPass').focus();
 </script>
 </body>
 </html>
